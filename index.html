@@ -692,10 +692,14 @@ function setupTextInput(lang) {
   sendBtn.addEventListener('click', doSend);
 }
 
-// Live, hands-free transcription: tap once to start, and it keeps
-// listening continuously - each time the speech engine detects a natural
-// pause it fires a "final" result, which we send immediately as its own
-// message, then keep listening for the next one. Tap again to stop.
+// Live, hands-free transcription: tap once to start. Chrome's continuous
+// mode (recog.continuous = true) turns out to re-finalize overlapping,
+// growing chunks of the same sentence instead of cleanly finalizing once
+// per pause ("Good" / "evening" / "Good evening" all sent separately) -
+// so instead we use single-utterance mode, which has much more reliable
+// built-in pause detection, and just restart it immediately after every
+// utterance. That restart is instant enough that it still feels like one
+// continuous listening session. Tap again to stop.
 // (A tap is still required to *start* - browsers require a user gesture
 // before granting microphone access - but there's no more press-and-hold.)
 const micControllers = {};
@@ -712,7 +716,7 @@ function setupMic(lang) {
   }
 
   const recog = new SpeechRecognition();
-  recog.continuous = true;
+  recog.continuous = false;
   recog.interimResults = true;
   recog.maxAlternatives = 1;
 
@@ -757,9 +761,12 @@ function setupMic(lang) {
   function scheduleRestart() {
     if (!listening) return;
     clearTimeout(restartTimer);
+    // Short delay - with single-utterance mode this fires after every
+    // sentence, not just as an occasional fallback, so it needs to be
+    // quick enough that the next thing you say isn't clipped.
     restartTimer = setTimeout(() => {
       if (listening && !running) doStart();
-    }, 400);
+    }, 150);
   }
 
   recog.onresult = (e) => {
