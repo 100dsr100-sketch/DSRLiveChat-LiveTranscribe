@@ -117,7 +117,8 @@
     min-height: 21px;
   }
   .change-role-link {
-    font-size: 15px;
+    font-size: 17px;
+    font-weight: 700;
     color: #d4af37;
     text-decoration: underline;
     cursor: pointer;
@@ -143,26 +144,26 @@
   .speak-toggle {
     display: flex;
     align-items: center;
-    gap: 9px;
-    font-size: 20px;
+    gap: 6px;
+    font-size: 13px;
     color: #ccc;
     background: #333;
     border: 1px solid #555;
-    border-radius: 21px;
-    padding: 6px 18px;
+    border-radius: 14px;
+    padding: 4px 12px;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
   }
   .speak-toggle.on { background: #2f7dd6; border-color: #2f7dd6; color: #fff; }
   .lang-select {
-    font-size: 20px;
+    font-size: 13px;
     color: #eee;
     background: #333;
     border: 1px solid #555;
-    border-radius: 21px;
-    padding: 6px 15px;
-    margin-left: 12px;
+    border-radius: 14px;
+    padding: 4px 10px;
+    margin-left: 8px;
   }
   .panel {
     flex: 1 1 0;
@@ -201,17 +202,17 @@
   .messages {
     flex: 1 1 auto;
     overflow-y: auto;
-    padding: 9px 15px;
+    padding: 6px 10px;
     display: flex;
     flex-direction: column;
-    gap: 9px;
+    gap: 6px;
     min-height: 0;
   }
   .bubble {
     max-width: 78%;
-    padding: 12px 18px;
-    border-radius: 24px;
-    font-size: 24px;
+    padding: 8px 12px;
+    border-radius: 16px;
+    font-size: 16px;
     line-height: 1.35;
     word-wrap: break-word;
     white-space: pre-wrap;
@@ -220,13 +221,13 @@
     align-self: flex-end;
     background: #2f7dd6;
     color: #fff;
-    border-bottom-right-radius: 6px;
+    border-bottom-right-radius: 4px;
   }
   .bubble.other {
     align-self: flex-start;
     background: #e2e5ea;
     color: #222;
-    border-bottom-left-radius: 6px;
+    border-bottom-left-radius: 4px;
   }
 
   .mic-status {
@@ -248,11 +249,11 @@
     flex: 1 1 auto;
     resize: none;
     border: 1px solid #ccc;
-    border-radius: 27px;
-    padding: 14px 21px;
-    font-size: 24px;
+    border-radius: 18px;
+    padding: 9px 14px;
+    font-size: 16px;
     font-family: inherit;
-    max-height: 135px;
+    max-height: 90px;
     line-height: 1.3;
   }
   .input-row textarea:focus { outline: 2px solid #2f7dd6; }
@@ -281,11 +282,11 @@
 
   .round-btn {
     flex: 0 0 auto;
-    width: 63px;
-    height: 63px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     border: none;
-    font-size: 27px;
+    font-size: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -365,7 +366,7 @@
 // Bump this on every deploy so it's easy to tell (bottom of the app header)
 // whether a device has actually picked up the latest version, vs. showing
 // a stale cached copy.
-const APP_VERSION = 'Version 8a';
+const APP_VERSION = 'Version 8b';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // --- access lock ---------------------------------------------------------
