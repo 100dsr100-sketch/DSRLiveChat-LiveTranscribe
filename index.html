@@ -365,7 +365,7 @@
 // Bump this on every deploy so it's easy to tell (bottom of the app header)
 // whether a device has actually picked up the latest version, vs. showing
 // a stale cached copy.
-const APP_VERSION = 'Version 8';
+const APP_VERSION = 'Version 8a';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // --- access lock ---------------------------------------------------------
@@ -536,8 +536,8 @@ const messages = [];
 
 const LANGUAGES = {
   en: { name: 'English', speechLang: 'en-US', hasNonLatinScript: false },
-  hi: { name: 'Hindi', speechLang: 'hi-IN', hasNonLatinScript: true, itc: 'hi-t-i0-und' },
-  it: { name: 'Italian', speechLang: 'it-IT', hasNonLatinScript: false },
+  hi: { name: 'Hindi', speechLang: 'hi-IN', hasNonLatinScript: true, itc: 'hi-t-i0-und', placeholder: 'Hindi mein bolen ya type karen' },
+  it: { name: 'Italian', speechLang: 'it-IT', hasNonLatinScript: false, placeholder: 'Parla o scrivi in italiano' },
   es: { name: 'Spanish', speechLang: 'es-ES', hasNonLatinScript: false },
   fr: { name: 'French', speechLang: 'fr-FR', hasNonLatinScript: false },
   de: { name: 'German', speechLang: 'de-DE', hasNonLatinScript: false },
@@ -922,7 +922,7 @@ function setupMic(lang) {
 function updateOtherLangUI() {
   const info = LANGUAGES[otherLang];
   document.getElementById('panel-hi-label').textContent = info.name;
-  document.getElementById('input-hi').placeholder = 'Type in ' + info.name + '...';
+  document.getElementById('input-hi').placeholder = info.placeholder || ('Type in ' + info.name + '...');
 }
 
 const otherLangSelect = document.getElementById('otherLangSelect');
