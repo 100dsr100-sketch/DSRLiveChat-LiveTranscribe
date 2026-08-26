@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#222222">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LiveChat">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>DSR Live Chat Translator</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #111;
+    touch-action: manipulation;
+  }
+  #lockScreen {
+    position: fixed; inset: 0;
+    background: #111;
+    color: #eee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  #lockScreen.hidden { display: none; }
+  #lockBox {
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 12px;
+    padding: 24px;
+    width: 260px;
+    text-align: center;
+  }
+  #lockBox input {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: 1px solid #555;
+    background: #333;
+    color: #fff;
+    margin: 12px 0;
+  }
+  #lockBox button {
+    width: 100%;
+    padding: 10px;
+    font-size: 15px;
+    border-radius: 8px;
+    border: none;
+    background: #2f7dd6;
+    color: #fff;
+    cursor: pointer;
+  }
+  #lockError {
+    color: #e0433b;
+    font-size: 12px;
+    min-height: 16px;
+  }
+  #roleScreen {
+    position: fixed; inset: 0;
+    background: #111;
+    color: #eee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 900;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  #roleScreen.hidden { display: none; }
+  #roleBox {
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 12px;
+    padding: 24px;
+    width: 280px;
+    text-align: center;
+  }
+  .role-title {
+    font-size: 14px;
+    color: #ccc;
+    margin-bottom: 16px;
+  }
+  .role-btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    border-radius: 8px;
+    border: 1px solid #555;
+    background: #333;
+    color: #fff;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  .role-btn:active { background: #2f7dd6; }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+  }
+  #app.hidden { display: none; }
+  .conn-status {
+    flex: 0 0 100%;
+    text-align: center;
+    font-size: 11px;
+    color: #999;
+    min-height: 14px;
+  }
+  .change-role-link {
+    font-size: 10px;
+    color: #777;
+    text-decoration: underline;
+    cursor: pointer;
+    margin-top: 2px;
+  }
+  .top-bar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    background: #222;
+    row-gap: 2px;
+  }
+  .speak-status {
+    flex: 0 0 100%;
+    text-align: center;
+    font-size: 11px;
+    color: #e0433b;
+    min-height: 14px;
+  }
+  .speak-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #ccc;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 14px;
+    padding: 4px 12px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .speak-toggle.on { background: #2f7dd6; border-color: #2f7dd6; color: #fff; }
+  .lang-select {
+    font-size: 13px;
+    color: #eee;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 14px;
+    padding: 4px 10px;
+    margin-left: 8px;
+  }
+  .panel {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+  .panel-en { background: #eef3f8; }
+  .panel-hi { background: #fdf0ee; }
+
+  .panel-header {
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    color: #666;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  .panel-header .clear-btn {
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: none;
+    color: #999;
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+
+  .messages {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+  }
+  .bubble {
+    max-width: 78%;
+    padding: 8px 12px;
+    border-radius: 16px;
+    font-size: 16px;
+    line-height: 1.35;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+  .bubble.own {
+    align-self: flex-end;
+    background: #2f7dd6;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.other {
+    align-self: flex-start;
+    background: #e2e5ea;
+    color: #222;
+    border-bottom-left-radius: 4px;
+  }
+
+  .mic-status {
+    flex: 0 0 auto;
+    min-height: 16px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: #c0392b;
+  }
+  .input-row {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.6);
+  }
+  .input-row textarea {
+    flex: 1 1 auto;
+    resize: none;
+    border: 1px solid #ccc;
+    border-radius: 18px;
+    padding: 9px 14px;
+    font-size: 16px;
+    font-family: inherit;
+    max-height: 90px;
+    line-height: 1.3;
+  }
+  .input-row textarea:focus { outline: 2px solid #2f7dd6; }
+
+  .app-header {
+    flex: 0 0 auto;
+    text-align: center;
+    background: #111;
+    color: #fff;
+    padding: 6px 4px 4px;
+  }
+  .app-header-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .app-header-subtitle {
+    font-size: 11px;
+    color: #aaa;
+  }
+
+  .round-btn {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .send-btn { background: #2f7dd6; color: #fff; }
+  .mic-btn { background: #ddd; color: #333; }
+  .mic-btn.listening { background: #e0433b; color: #fff; }
+  .mic-btn:disabled { opacity: 0.35; cursor: default; }
+</style>
+</head>
+<body>
+
+<div id="lockScreen">
+  <div id="lockBox">
+    <div>Enter password</div>
+    <input type="password" id="lockInput" autocomplete="off">
+    <button id="lockBtn">Unlock</button>
+    <div id="lockError"></div>
+  </div>
+</div>
+
+<div id="roleScreen" class="hidden">
+  <div id="roleBox">
+    <div class="role-title">How are you using this?</div>
+    <button class="role-btn" id="roleBtnEn">Two devices - I'm English</button>
+    <button class="role-btn" id="roleBtnOther">Two devices - I pick my language</button>
+    <button class="role-btn" id="roleBtnSingle">One device - both languages here</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="app-header">
+    <div class="app-header-title">DSR Systems</div>
+    <div class="app-header-subtitle">Live Language Translator</div>
+    <div class="change-role-link" id="changeRoleLink">Change device role</div>
+  </div>
+  <div class="top-bar">
+    <button class="speak-toggle on" id="speakToggle">&#128266; Speak translations</button>
+    <select class="lang-select" id="otherLangSelect"></select>
+    <div class="conn-status" id="connStatus"></div>
+    <div class="speak-status" id="speakStatus"></div>
+  </div>
+  <div class="panel panel-en" id="panel-en">
+    <div class="panel-header">
+      <span>English</span>
+      <button class="clear-btn" onclick="clearMessages()">Clear</button>
+    </div>
+    <div class="messages" id="messages-en"></div>
+    <div class="mic-status" id="mic-status-en"></div>
+    <div class="input-row">
+      <button class="round-btn mic-btn" id="mic-en">&#127908;</button>
+      <textarea id="input-en" rows="1" placeholder="Type in English..."></textarea>
+      <button class="round-btn send-btn" id="send-en">&#10148;</button>
+    </div>
+  </div>
+
+  <div class="panel panel-hi" id="panel-hi">
+    <div class="panel-header">
+      <span id="panel-hi-label">Hindi</span>
+      <button class="clear-btn" onclick="clearMessages()">Clear</button>
+    </div>
+    <div class="messages" id="messages-hi"></div>
+    <div class="mic-status" id="mic-status-hi"></div>
+    <div class="input-row">
+      <button class="round-btn mic-btn" id="mic-hi">&#127908;</button>
+      <textarea id="input-hi" rows="1" placeholder="Type in Hindi..."></textarea>
+      <button class="round-btn send-btn" id="send-hi">&#10148;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- access lock ---------------------------------------------------------
+// NOTE: this is a casual deterrent only (visible in page source), not real
+// security. Change ACCESS_PASSWORD below to whatever you like.
+const ACCESS_PASSWORD = '2015';
+const LOCK_STORAGE_KEY = 'dsrLiveChatUnlocked';
+
+const lockScreen = document.getElementById('lockScreen');
+const lockInput = document.getElementById('lockInput');
+const lockBtn = document.getElementById('lockBtn');
+const lockError = document.getElementById('lockError');
+
+function tryUnlock() {
+  if (lockInput.value === ACCESS_PASSWORD) {
+    localStorage.setItem(LOCK_STORAGE_KEY, '1');
+    lockScreen.classList.add('hidden');
+    afterUnlock();
+  } else {
+    lockError.textContent = 'Incorrect password';
+  }
+}
+lockBtn.addEventListener('click', tryUnlock);
+lockInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+
+// --- device role (which side of the two-device conversation this is) ----
+const ROLE_STORAGE_KEY = 'dsrLiveChatRole';
+const roleScreen = document.getElementById('roleScreen');
+const appEl = document.getElementById('app');
+let role = localStorage.getItem(ROLE_STORAGE_KEY) || null;
+
+function afterUnlock() {
+  if (role) {
+    appEl.classList.remove('hidden');
+    setupForRole();
+    if (role !== 'single') connectWS();
+  } else {
+    roleScreen.classList.remove('hidden');
+  }
+}
+
+function applyRole(r) {
+  role = r;
+  localStorage.setItem(ROLE_STORAGE_KEY, r);
+  roleScreen.classList.add('hidden');
+  appEl.classList.remove('hidden');
+  setupForRole();
+  if (role !== 'single') connectWS();
+}
+document.getElementById('roleBtnEn').addEventListener('click', () => applyRole('en'));
+document.getElementById('roleBtnOther').addEventListener('click', () => applyRole('other'));
+document.getElementById('roleBtnSingle').addEventListener('click', () => applyRole('single'));
+document.getElementById('changeRoleLink').addEventListener('click', () => {
+  if (confirm('Switch this device to the other role? You will need to pick again.')) {
+    localStorage.removeItem(ROLE_STORAGE_KEY);
+    location.reload();
+  }
+});
+
+if (localStorage.getItem(LOCK_STORAGE_KEY) !== '1') {
+  lockInput.focus();
+}
+// NOTE: the already-unlocked case calls afterUnlock() at the bottom of this
+// script, once everything it depends on (LANGUAGES, otherLangSelect, etc.)
+// has actually been declared - see the end of the file.
+
+// --- transliteration proxy -----------------------------------------------
+// Fill this in once the Cloudflare Worker is deployed, e.g.
+// 'https://dsrlivechat-translit.yoursubdomain.workers.dev'
+// Until then, typed Hindi just skips the transliteration boost (same
+// graceful fallback as any Latin-script language) - voice input is
+// unaffected either way.
+const TRANSLIT_WORKER_URL = 'https://dsrlivechat-translit.100dsr100.workers.dev';
+
+// --- two-device relay -----------------------------------------------------
+// Same Worker as the transliteration proxy above, relaying chat messages
+// between the two paired devices over a WebSocket (Durable Object).
+const CHAT_WS_URL = TRANSLIT_WORKER_URL.replace(/^http/, 'ws') + '/ws';
+
+const connStatusEl = document.getElementById('connStatus');
+function setConnStatus(text) { connStatusEl.textContent = text; }
+
+let ws = null;
+let reconnectDelay = 1000;
+let reconnectTimer = null;
+
+function connectWS() {
+  if (!role) return;
+  clearTimeout(reconnectTimer);
+  setConnStatus('Connecting...');
+  ws = new WebSocket(CHAT_WS_URL);
+  ws.onopen = () => {
+    reconnectDelay = 1000;
+    setConnStatus('Connected');
+    if (role === 'other') sendConfig();
+  };
+  ws.onmessage = (ev) => handleIncoming(ev.data);
+  ws.onclose = () => {
+    setConnStatus('Disconnected - reconnecting...');
+    reconnectTimer = setTimeout(connectWS, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch (err) { /* already closing */ } };
+}
+
+function sendConfig() {
+  if (role === 'other' && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'config', otherLang }));
+  }
+}
+
+function sendChatOverWs(text, otherText) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'chat', sender: role, text, otherText }));
+}
+
+function mySpeechLangCode() {
+  return role === 'en' ? 'en' : otherLang;
+}
+
+function handleIncoming(raw) {
+  let data;
+  try { data = JSON.parse(raw); } catch (err) { return; }
+  if (data.type === 'config') {
+    if (role === 'en') {
+      otherLang = data.otherLang;
+      updateOtherLangUI();
+      otherLangSelect.value = otherLang;
+    }
+    return;
+  }
+  if (data.type === 'chat') {
+    if (data.sender === role) return;
+    messages.push({ sender: data.sender, text: data.text, otherText: data.otherText });
+    render();
+    speakText(mySpeechLangCode(), data.otherText);
+  }
+}
+
+// --- app -------------------------------------------------------------
+const messages = [];
+
+const LANGUAGES = {
+  hi: { name: 'Hindi', speechLang: 'hi-IN', hasNonLatinScript: true, itc: 'hi-t-i0-und' },
+  it: { name: 'Italian', speechLang: 'it-IT', hasNonLatinScript: false },
+  es: { name: 'Spanish', speechLang: 'es-ES', hasNonLatinScript: false },
+  fr: { name: 'French', speechLang: 'fr-FR', hasNonLatinScript: false },
+  de: { name: 'German', speechLang: 'de-DE', hasNonLatinScript: false },
+  pt: { name: 'Portuguese', speechLang: 'pt-PT', hasNonLatinScript: false },
+};
+
+let otherLang = 'hi';
+
+async function translateText(sourceLang, targetLang, text, wantRomanization) {
+  const dtParams = wantRomanization ? '&dt=t&dt=rm' : '&dt=t';
+  const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' +
+    sourceLang + '&tl=' + targetLang + dtParams + '&q=' + encodeURIComponent(text);
+  const res = await fetch(url);
+  const data = await res.json();
+  let scriptText = '';
+  let romanized = '';
+  for (const seg of data[0]) {
+    if (typeof seg[0] === 'string') {
+      scriptText += seg[0];
+    } else if (seg.length >= 3 && typeof seg[2] === 'string') {
+      romanized = seg[2];
+    }
+  }
+  return { scriptText, romanized };
+}
+
+async function transliterateToNativeScript(romanizedText, itc) {
+  if (!TRANSLIT_WORKER_URL) return null;
+  const res = await fetch(TRANSLIT_WORKER_URL + '?text=' + encodeURIComponent(romanizedText) + '&itc=' + encodeURIComponent(itc));
+  const data = await res.json();
+  if (!Array.isArray(data) || data[0] !== 'SUCCESS') return null;
+  return data[1].map((seg) => seg[1][0]).join(' ').trim();
+}
+
+let speakEnabled = true;
+const speakToggleBtn = document.getElementById('speakToggle');
+speakToggleBtn.addEventListener('click', () => {
+  speakEnabled = !speakEnabled;
+  speakToggleBtn.classList.toggle('on', speakEnabled);
+  speakToggleBtn.innerHTML = speakEnabled ? '&#128266; Speak translations' : '&#128263; Speak translations';
+});
+
+const speakStatusEl = document.getElementById('speakStatus');
+
+function speakText(langCode, text) {
+  if (!speakEnabled || !text) return;
+  speakStatusEl.textContent = '';
+  const url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' +
+    langCode + '&q=' + encodeURIComponent(text);
+  const audio = new Audio();
+  audio.referrerPolicy = 'no-referrer';
+  audio.src = url;
+  let fallbackTried = false;
+
+  const runFallback = (reason) => {
+    if (fallbackTried) return;
+    fallbackTried = true;
+    console.warn('Google TTS playback failed (' + reason + '), falling back to local voice');
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = langCode === 'en' ? 'en-US' : (LANGUAGES[langCode]?.speechLang || langCode);
+      utter.onerror = (e) => {
+        speakStatusEl.textContent = 'Speech failed (' + reason + ' + local voice: ' + e.error + ')';
+      };
+      speechSynthesis.speak(utter);
+      speakStatusEl.textContent = 'Google voice unavailable (' + reason + ') - using local voice instead';
+    } catch (err2) {
+      speakStatusEl.textContent = 'Speech failed: ' + reason + ' / ' + err2.message;
+      console.error('speech fallback failed', err2);
+    }
+  };
+
+  audio.addEventListener('error', () => runFallback('audio load error'));
+  audio.play().catch((err) => runFallback(err.name + ': ' + err.message));
+}
+
+function scrollToBottom(el) {
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderPanel(lang) {
+  const container = document.getElementById('messages-' + lang);
+  container.innerHTML = '';
+  for (const m of messages) {
+    const bubble = document.createElement('div');
+    const isOwn = m.sender === lang;
+    bubble.className = 'bubble ' + (isOwn ? 'own' : 'other');
+    bubble.textContent = isOwn ? m.text : m.otherText;
+    container.appendChild(bubble);
+  }
+  scrollToBottom(container);
+}
+
+function render() {
+  if (role === 'single') {
+    renderPanel('en');
+    renderPanel('hi');
+  } else {
+    renderPanel(panelKey);
+  }
+}
+
+function clearMessages() {
+  messages.length = 0;
+  render();
+}
+
+// Live transcription can fire several finalized phrases in quick succession
+// (especially across both panels at once), and each one kicks off its own
+// network call to translate - those calls can resolve out of order. Routing
+// every send through one shared queue guarantees messages appear in the
+// order they were actually spoken/typed, not the order their translation
+// happened to come back.
+let sendQueue = Promise.resolve();
+function enqueueSend(fn) {
+  sendQueue = sendQueue.then(fn, fn);
+  return sendQueue;
+}
+
+// sender is 'en' or 'hi' - which panel this message came from. rawText is
+// what gets shown on the sender's own bubble; sourceOverride, when given, is
+// already-native-script text (from speech recognition) that should be
+// translated directly, skipping the romanized-typing transliteration boost
+// below.
+async function composeAndSend(sender, rawText, sourceOverride) {
+  rawText = rawText.trim();
+  if (!rawText) return;
+  let sourceText = (sourceOverride && sourceOverride.trim()) ? sourceOverride.trim() : rawText;
+
+  let otherText = '';
+  try {
+    if (sender === 'en') {
+      const wantRoman = LANGUAGES[otherLang].hasNonLatinScript;
+      const { romanized, scriptText } = await translateText('en', otherLang, sourceText, wantRoman);
+      otherText = (wantRoman && romanized) ? romanized : scriptText;
+    } else {
+      const info = LANGUAGES[otherLang];
+      if (info.hasNonLatinScript && !sourceOverride) {
+        try {
+          const converted = await transliterateToNativeScript(sourceText, info.itc);
+          if (converted) sourceText = converted;
+        } catch (err) {
+          console.error('transliteration failed, falling back to romanized text', err);
+        }
+      }
+      const { scriptText } = await translateText(otherLang, 'en', sourceText, false);
+      otherText = scriptText;
+    }
+  } catch (err) {
+    otherText = '[translation error]';
+    console.error(err);
+  }
+
+  messages.push({ sender, text: rawText, otherText });
+
+  if (role === 'single') {
+    // Both languages live on this one device - render both panels and speak
+    // the translation out loud right away, same as the original app.
+    render();
+    const targetLang = sender === 'en' ? otherLang : 'en';
+    speakText(targetLang, otherText);
+  } else {
+    // Paired mode - only this device's own panel is shown; the peer device
+    // speaks the translation when it receives it over the WebSocket.
+    render();
+    sendChatOverWs(rawText, otherText);
+  }
+}
+
+function setupTextInput(lang) {
+  const input = document.getElementById('input-' + lang);
+  const sendBtn = document.getElementById('send-' + lang);
+
+  const doSend = () => {
+    const val = input.value;
+    input.value = '';
+    input.style.height = 'auto';
+    enqueueSend(() => composeAndSend(lang, val));
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      doSend();
+    }
+  });
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 90) + 'px';
+  });
+  sendBtn.addEventListener('click', doSend);
+}
+
+// Live, hands-free transcription: tap once to start, and it keeps
+// listening continuously - each time the speech engine detects a natural
+// pause it fires a "final" result, which we send immediately as its own
+// message, then keep listening for the next one. Tap again to stop.
+// (A tap is still required to *start* - browsers require a user gesture
+// before granting microphone access - but there's no more press-and-hold.)
+const micControllers = {};
+
+function setupMic(lang) {
+  const btn = document.getElementById('mic-' + lang);
+  const status = document.getElementById('mic-status-' + lang);
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    btn.disabled = true;
+    btn.title = 'Speech recognition not supported in this browser';
+    status.textContent = 'Speech recognition not supported in this browser';
+    return;
+  }
+
+  const recog = new SpeechRecognition();
+  recog.continuous = true;
+  recog.interimResults = true;
+  recog.maxAlternatives = 1;
+
+  let listening = false;   // user wants this on
+  let running = false;     // a recognition session is currently active
+  let restartTimer = null;
+
+  async function handleFinalTranscript(transcript) {
+    if (!transcript) return;
+    if (lang === 'hi') {
+      const info = LANGUAGES[otherLang];
+      if (info.hasNonLatinScript) {
+        try {
+          const { romanized, scriptText } = await translateText(otherLang, otherLang, transcript, true);
+          const displayText = romanized || scriptText || transcript;
+          composeAndSend(lang, displayText, transcript);
+        } catch (err) {
+          composeAndSend(lang, transcript, transcript);
+        }
+      } else {
+        composeAndSend(lang, transcript, transcript);
+      }
+    } else {
+      composeAndSend(lang, transcript);
+    }
+  }
+
+  function updateButton() {
+    btn.classList.toggle('listening', listening);
+    btn.textContent = listening ? '⏹' : '\u{1F3A4}';
+    btn.title = listening ? 'Stop listening' : 'Start listening';
+  }
+
+  function doStart() {
+    recog.lang = lang === 'hi' ? LANGUAGES[otherLang].speechLang : 'en-US';
+    try {
+      recog.start();
+      running = true;
+    } catch (err) { /* already running */ }
+  }
+
+  function scheduleRestart() {
+    if (!listening) return;
+    clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => {
+      if (listening && !running) doStart();
+    }, 400);
+  }
+
+  recog.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const result = e.results[i];
+      if (result.isFinal) {
+        const transcript = result[0].transcript.trim();
+        enqueueSend(() => handleFinalTranscript(transcript));
+      } else {
+        interim += result[0].transcript;
+      }
+    }
+    status.textContent = interim ? interim + ' ...' : 'Listening...';
+  };
+  recog.onend = () => {
+    running = false;
+    scheduleRestart();
+  };
+  recog.onerror = (e) => {
+    running = false;
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      listening = false;
+      updateButton();
+      status.textContent = 'Microphone permission denied';
+      return;
+    }
+    status.textContent = (e.error === 'no-speech' || e.error === 'network' || e.error === 'aborted')
+      ? (listening ? 'Listening...' : '')
+      : 'Mic error: ' + e.error;
+    scheduleRestart();
+  };
+
+  btn.addEventListener('click', () => {
+    listening = !listening;
+    updateButton();
+    clearTimeout(restartTimer);
+    if (listening) {
+      status.textContent = 'Starting... (allow microphone access if asked)';
+      doStart();
+    } else {
+      status.textContent = '';
+      try { recog.stop(); } catch (err) { /* already stopped */ }
+    }
+  });
+
+  updateButton();
+
+  const controller = {
+    restartIfListening() {
+      if (listening && running) {
+        try { recog.stop(); } catch (err) { /* already stopped, onend will restart with fresh lang */ }
+      }
+    },
+  };
+  micControllers[lang] = controller;
+}
+
+function updateOtherLangUI() {
+  const info = LANGUAGES[otherLang];
+  document.getElementById('panel-hi-label').textContent = info.name;
+  document.getElementById('input-hi').placeholder = 'Type in ' + info.name + '...';
+}
+
+const otherLangSelect = document.getElementById('otherLangSelect');
+for (const code in LANGUAGES) {
+  const opt = document.createElement('option');
+  opt.value = code;
+  opt.textContent = LANGUAGES[code].name;
+  otherLangSelect.appendChild(opt);
+}
+otherLangSelect.value = otherLang;
+otherLangSelect.addEventListener('change', () => {
+  otherLang = otherLangSelect.value;
+  updateOtherLangUI();
+  micControllers.hi?.restartIfListening();
+  clearMessages();
+  sendConfig();
+});
+
+// --- mode-based setup --------------------------------------------------
+// role is 'single' (both languages on this one device, no relay - the
+// original app), or 'en' / 'other' (paired two-device mode, this device
+// shows only its own panel and syncs over the WebSocket relay).
+let panelKey = 'en';
+let roleSetupDone = false;
+function setupForRole() {
+  if (roleSetupDone) return;
+  roleSetupDone = true;
+
+  if (role === 'single') {
+    document.getElementById('panel-en').style.display = 'flex';
+    document.getElementById('panel-hi').style.display = 'flex';
+    otherLangSelect.disabled = false;
+    otherLangSelect.title = '';
+    updateOtherLangUI();
+    setupTextInput('en');
+    setupTextInput('hi');
+    setupMic('en');
+    setupMic('hi');
+    render();
+    return;
+  }
+
+  panelKey = role === 'en' ? 'en' : 'hi';
+  document.getElementById('panel-en').style.display = role === 'en' ? 'flex' : 'none';
+  document.getElementById('panel-hi').style.display = role === 'other' ? 'flex' : 'none';
+  if (role === 'en') {
+    // The English side is fixed - the other-language person picks their own
+    // language and it syncs over to here.
+    otherLangSelect.disabled = true;
+    otherLangSelect.title = 'Set by the other side';
+  } else {
+    otherLangSelect.disabled = false;
+    otherLangSelect.title = '';
+  }
+  updateOtherLangUI();
+  setupTextInput(panelKey);
+  setupMic(panelKey);
+  render();
+}
+
+if (localStorage.getItem(LOCK_STORAGE_KEY) === '1') {
+  lockScreen.classList.add('hidden');
+  afterUnlock();
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js').catch((err) => {
+    console.error('Service worker registration failed', err);
+  });
+}
+</script>
+</body>
+</html>
