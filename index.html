@@ -273,6 +273,10 @@
     font-size: 11px;
     color: #aaa;
   }
+  .app-version {
+    font-size: 9px;
+    color: #555;
+  }
 
   .round-btn {
     flex: 0 0 auto;
@@ -318,6 +322,7 @@
   <div class="app-header">
     <div class="app-header-title">DSR Systems</div>
     <div class="app-header-subtitle">Live Language Translator</div>
+    <div class="app-version" id="appVersion"></div>
     <div class="change-role-link" id="changeRoleLink">Change device role</div>
   </div>
   <div class="top-bar">
@@ -356,6 +361,12 @@
 </div>
 
 <script>
+// Bump this on every deploy so it's easy to tell (bottom of the app header)
+// whether a device has actually picked up the latest version, vs. showing
+// a stale cached copy.
+const APP_VERSION = 'v5 - fixed listening tones';
+document.getElementById('appVersion').textContent = APP_VERSION;
+
 // --- access lock ---------------------------------------------------------
 // NOTE: this is a casual deterrent only (visible in page source), not real
 // security. Change ACCESS_PASSWORD below to whatever you like.
