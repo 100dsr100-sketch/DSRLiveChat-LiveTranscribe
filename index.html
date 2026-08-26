@@ -364,7 +364,7 @@
 // Bump this on every deploy so it's easy to tell (bottom of the app header)
 // whether a device has actually picked up the latest version, vs. showing
 // a stale cached copy.
-const APP_VERSION = 'v5 - fixed listening tones';
+const APP_VERSION = 'v6 - Whisper-based mic (no more tones)';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // --- access lock ---------------------------------------------------------
@@ -465,6 +465,10 @@ const TRANSLIT_WORKER_URL = 'https://dsrlivechat-translit.100dsr100.workers.dev'
 // Same Worker as the transliteration proxy above, relaying chat messages
 // between the two paired devices over a WebSocket (Durable Object).
 const CHAT_WS_URL = TRANSLIT_WORKER_URL.replace(/^http/, 'ws') + '/ws';
+
+// Same Worker again - runs Whisper via Workers AI to transcribe recorded
+// audio chunks (see setupMic below).
+const TRANSCRIBE_URL = TRANSLIT_WORKER_URL + '/transcribe';
 
 const connStatusEl = document.getElementById('connStatus');
 function setConnStatus(text) { connStatusEl.textContent = text; }
@@ -725,53 +729,57 @@ function setupTextInput(lang) {
   sendBtn.addEventListener('click', doSend);
 }
 
-// Live, hands-free transcription: tap once to start. Two things this has
-// to work around:
-// 1. Chrome/Android's continuous mode re-finalizes overlapping, growing
-//    chunks of the same sentence instead of cleanly finalizing once per
-//    pause ("Good" / "evening" / "Good evening" all sent separately) - so
-//    we don't trust isFinal at all. Instead we watch for a gap of PAUSE_MS
-//    with no new recognition events and treat that as "they paused," then
-//    send whatever's accumulated since the last send.
-// 2. Restarting recognition (recog.start()) plays an audible tone on
-//    Android, and ending it does too - so we start the session ONCE per
-//    "listening on" period rather than once per sentence, and only
-//    restart it if it unexpectedly ends on its own (network hiccup, or a
-//    platform-enforced session time limit) - not as part of normal
-//    pause-to-pause operation.
+// Live, hands-free transcription: tap once to start. This does NOT use the
+// browser's built-in SpeechRecognition (voice-input) service at all -
+// Android plays an audible tone every time that service starts/stops, and
+// its platform-level silence timeout kept forcing pointless restarts (and
+// tones) every few seconds even during silence, with no way to suppress
+// either from JS. Instead this records raw microphone audio itself,
+// watches the volume to notice when you've paused, and uploads just that
+// chunk to a Whisper speech-to-text model (via the Worker) - no dedicated
+// OS voice-input UI is ever invoked, so no tones, and pauses are detected
+// entirely on our own terms.
 // Tap the button again to stop. (Starting still needs a tap - browsers
 // require a user gesture before granting microphone access.)
-const micControllers = {};
-const PAUSE_MS = 1000;
+const PAUSE_MS = 900;          // silence gap that counts as "you paused"
+const MIN_SEGMENT_MS = 300;    // ignore accidental near-instant taps
+const SILENCE_RMS = 10;        // volume threshold, 0-255 time-domain scale
+const VAD_INTERVAL_MS = 100;
 
 function setupMic(lang) {
   const btn = document.getElementById('mic-' + lang);
   const status = document.getElementById('mic-status-' + lang);
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
     btn.disabled = true;
-    btn.title = 'Speech recognition not supported in this browser';
-    status.textContent = 'Speech recognition not supported in this browser';
+    btn.title = 'Microphone recording not supported in this browser';
+    status.textContent = 'Microphone recording not supported in this browser';
     return;
   }
 
-  const recog = new SpeechRecognition();
-  recog.continuous = true;
-  recog.interimResults = true;
-  recog.maxAlternatives = 1;
+  const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+    .find((t) => window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
 
-  let listening = false;   // user wants this on
-  let running = false;     // a recognition session is currently active
-  let restartTimer = null;
-  let pauseTimer = null;
-  let committedIndex = 0;  // how many entries of the current session's
-                           // results list we've already sent
+  let listening = false;
+  let stream = null;
+  let audioCtx = null;
+  let analyser = null;
+  let dataArray = null;
+  let vadTimer = null;
+  let recorder = null;
+  let chunks = [];
+  let hasSpeech = false;
+  let silenceStart = null;
+  let segmentStartedAt = 0;
 
-  async function handleFinalTranscript(transcript) {
+  async function handleTranscript(transcript) {
     if (!transcript) return;
     if (lang === 'hi') {
       const info = LANGUAGES[otherLang];
       if (info.hasNonLatinScript) {
+        // Whisper already returns native-script text directly for
+        // non-Latin languages - get a romanized version to display (same
+        // "English characters" preference as the typed-input path), but
+        // translate from the native-script transcript itself.
         try {
           const { romanized, scriptText } = await translateText(otherLang, otherLang, transcript, true);
           const displayText = romanized || scriptText || transcript;
@@ -793,87 +801,120 @@ function setupMic(lang) {
     btn.title = listening ? 'Stop listening' : 'Start listening';
   }
 
-  function doStart() {
-    recog.lang = lang === 'hi' ? LANGUAGES[otherLang].speechLang : 'en-US';
-    committedIndex = 0;
+  function computeRms() {
+    analyser.getByteTimeDomainData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      const v = dataArray[i] - 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / dataArray.length);
+  }
+
+  function startSegmentRecorder() {
+    chunks = [];
+    hasSpeech = false;
+    silenceStart = null;
+    segmentStartedAt = Date.now();
+    recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    recorder.addEventListener('dataavailable', (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    });
+    recorder.start();
+  }
+
+  async function transcribeAndSend(blob) {
+    status.textContent = 'Transcribing...';
     try {
-      recog.start();
-      running = true;
-    } catch (err) { /* already running */ }
+      const langHint = lang === 'hi' ? otherLang : 'en';
+      const res = await fetch(TRANSCRIBE_URL + '?lang=' + encodeURIComponent(langHint), {
+        method: 'POST',
+        headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+        body: blob,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const transcript = (data.text || '').trim();
+      status.textContent = listening ? 'Listening...' : '';
+      if (transcript) await handleTranscript(transcript);
+    } catch (err) {
+      console.error('transcription failed', err);
+      status.textContent = 'Transcription error: ' + err.message;
+    }
   }
 
-  function scheduleRestart() {
-    if (!listening) return;
-    clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => {
-      if (listening && !running) doStart();
-    }, 500);
+  // Stop the current segment's recorder, immediately start a fresh one
+  // (so nothing said right after is missed while we upload), then hand
+  // the just-finished audio off for transcription.
+  async function commitSegment() {
+    if (!recorder || recorder.state === 'inactive') return;
+    const finishedRecorder = recorder;
+    await new Promise((resolve) => {
+      finishedRecorder.addEventListener('stop', resolve, { once: true });
+      finishedRecorder.stop();
+    });
+
+    const finishedChunks = chunks;
+    const gotSpeech = hasSpeech;
+    const durationMs = Date.now() - segmentStartedAt;
+
+    if (listening) startSegmentRecorder();
+
+    if (!gotSpeech || durationMs < MIN_SEGMENT_MS || finishedChunks.length === 0) return;
+    const blob = new Blob(finishedChunks, { type: mimeType || 'audio/webm' });
+    enqueueSend(() => transcribeAndSend(blob));
   }
 
-  // Android/Chrome tends to restate a growing version of the same phrase
-  // across several result entries rather than cleanly appending distinct
-  // new ones ("Good" -> "evening" -> "Good evening" for one utterance) -
-  // so rather than concatenating everything since the last send (which
-  // would double up whatever got restated), just trust the single most
-  // recent result as the complete, best-guess text once things settle.
-  function commitPending(e) {
-    if (e.results.length <= committedIndex) return;
-    const last = e.results[e.results.length - 1];
-    committedIndex = e.results.length;
-    const transcript = (last && last[0].transcript || '').trim();
-    if (transcript) enqueueSend(() => handleFinalTranscript(transcript));
+  function vadTick() {
+    if (!listening || !analyser) return;
+    const rms = computeRms();
+    if (rms > SILENCE_RMS) {
+      hasSpeech = true;
+      silenceStart = null;
+      status.textContent = 'Listening...';
+    } else if (hasSpeech) {
+      if (silenceStart === null) {
+        silenceStart = Date.now();
+      } else if (Date.now() - silenceStart >= PAUSE_MS) {
+        silenceStart = null;
+        commitSegment();
+      }
+    }
   }
 
-  recog.onresult = (e) => {
-    clearTimeout(pauseTimer);
-    const last = e.results[e.results.length - 1];
-    const preview = last ? last[0].transcript : '';
-    status.textContent = preview ? preview + ' ...' : 'Listening...';
-    pauseTimer = setTimeout(() => commitPending(e), PAUSE_MS);
-  };
-  recog.onend = () => {
-    running = false;
-    clearTimeout(pauseTimer);
-    scheduleRestart();
-  };
-  recog.onerror = (e) => {
-    running = false;
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+  btn.addEventListener('click', async () => {
+    if (!listening) {
+      status.textContent = 'Starting... (allow microphone access if asked)';
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        status.textContent = 'Microphone permission denied';
+        return;
+      }
+      listening = true;
+      updateButton();
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      dataArray = new Uint8Array(analyser.fftSize);
+      source.connect(analyser);
+      startSegmentRecorder();
+      vadTimer = setInterval(vadTick, VAD_INTERVAL_MS);
+      status.textContent = 'Listening...';
+    } else {
       listening = false;
       updateButton();
-      status.textContent = 'Microphone permission denied';
-      return;
-    }
-    status.textContent = (e.error === 'no-speech' || e.error === 'network' || e.error === 'aborted')
-      ? (listening ? 'Listening...' : '')
-      : 'Mic error: ' + e.error;
-    scheduleRestart();
-  };
-
-  btn.addEventListener('click', () => {
-    listening = !listening;
-    updateButton();
-    clearTimeout(restartTimer);
-    if (listening) {
-      status.textContent = 'Starting... (allow microphone access if asked)';
-      doStart();
-    } else {
+      clearInterval(vadTimer);
+      await commitSegment(); // flush whatever's left, don't start another
+      if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+      if (audioCtx) { try { audioCtx.close(); } catch (err) { /* already closed */ } audioCtx = null; }
+      analyser = null;
       status.textContent = '';
-      clearTimeout(pauseTimer);
-      try { recog.stop(); } catch (err) { /* already stopped */ }
     }
   });
 
   updateButton();
-
-  const controller = {
-    restartIfListening() {
-      if (listening && running) {
-        try { recog.stop(); } catch (err) { /* already stopped, onend will restart with fresh lang */ }
-      }
-    },
-  };
-  micControllers[lang] = controller;
 }
 
 function updateOtherLangUI() {
@@ -893,7 +934,8 @@ otherLangSelect.value = otherLang;
 otherLangSelect.addEventListener('change', () => {
   otherLang = otherLangSelect.value;
   updateOtherLangUI();
-  micControllers.hi?.restartIfListening();
+  // No mic restart needed here - the "other" panel's mic reads otherLang
+  // fresh on every upload (see transcribeAndSend), not at listen-start time.
   clearMessages();
   sendConfig();
 });
