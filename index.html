@@ -102,6 +102,49 @@
     margin-bottom: 15px;
   }
   .role-btn:active { background: #2f7dd6; }
+  #devicesScreen {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    color: #eee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 950;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  #devicesScreen.hidden { display: none; }
+  #devicesBox {
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 18px;
+    padding: 36px;
+    width: 420px;
+    text-align: center;
+  }
+  .device-label {
+    display: block;
+    text-align: left;
+    font-size: 15px;
+    color: #d4af37;
+    margin: 16px 0 6px;
+  }
+  .device-select {
+    display: block;
+    width: 100%;
+    font-size: 17px;
+    color: #eee;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .device-select:disabled { opacity: 0.5; }
+  .device-note {
+    font-size: 13px;
+    color: #999;
+    margin: 16px 0;
+    min-height: 16px;
+  }
   #app {
     display: flex;
     flex-direction: column;
@@ -116,13 +159,18 @@
     color: #999;
     min-height: 21px;
   }
+  .header-links {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 3px;
+  }
   .change-role-link {
     font-size: 17px;
     font-weight: 700;
     color: #d4af37;
     text-decoration: underline;
     cursor: pointer;
-    margin-top: 3px;
   }
   .top-bar {
     flex: 0 0 auto;
@@ -320,12 +368,27 @@
   </div>
 </div>
 
+<div id="devicesScreen" class="hidden">
+  <div id="devicesBox">
+    <div class="role-title">Audio devices</div>
+    <label class="device-label" for="micDeviceSelect">Microphone</label>
+    <select class="device-select" id="micDeviceSelect"></select>
+    <label class="device-label" for="speakerDeviceSelect">Speaker</label>
+    <select class="device-select" id="speakerDeviceSelect"></select>
+    <div class="device-note" id="deviceNote"></div>
+    <button class="role-btn" id="devicesDoneBtn">Done</button>
+  </div>
+</div>
+
 <div id="app" class="hidden">
   <div class="app-header">
     <div class="app-header-title">DSR Systems</div>
     <div class="app-header-subtitle">Live Language Translator</div>
     <div class="app-version" id="appVersion"></div>
-    <div class="change-role-link" id="changeRoleLink">Change device role</div>
+    <div class="header-links">
+      <span class="change-role-link" id="changeRoleLink">Change device role</span>
+      <span class="change-role-link" id="devicesLink">Devices</span>
+    </div>
   </div>
   <div class="top-bar">
     <button class="speak-toggle on" id="speakToggle">&#128266; Speak translations</button>
@@ -366,7 +429,7 @@
 // Bump this on every deploy so it's easy to tell (bottom of the app header)
 // whether a device has actually picked up the latest version, vs. showing
 // a stale cached copy.
-const APP_VERSION = 'Version 8b';
+const APP_VERSION = 'Version 9';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // --- access lock ---------------------------------------------------------
@@ -446,6 +509,93 @@ document.getElementById('changeRoleLink').addEventListener('click', () => {
     localStorage.removeItem(ROLE_STORAGE_KEY);
     location.reload();
   }
+});
+
+// --- audio device selection -----------------------------------------------
+// getUserMedia only asks for a device once and the browser just remembers
+// whatever you picked (or defaulted to) that first time - plugging in a
+// headset later doesn't make it ask again. This lets you explicitly pick
+// (and remember) both the mic and, where supported, the speaker output.
+const MIC_DEVICE_KEY = 'dsrLiveChatMicDeviceId';
+const SPEAKER_DEVICE_KEY = 'dsrLiveChatSpeakerDeviceId';
+let preferredMicId = localStorage.getItem(MIC_DEVICE_KEY) || '';
+let preferredSpeakerId = localStorage.getItem(SPEAKER_DEVICE_KEY) || '';
+const supportsSinkId = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
+
+const devicesScreen = document.getElementById('devicesScreen');
+const micDeviceSelect = document.getElementById('micDeviceSelect');
+const speakerDeviceSelect = document.getElementById('speakerDeviceSelect');
+const deviceNoteEl = document.getElementById('deviceNote');
+
+function fillDeviceSelect(select, devices, preferredId, placeholderLabel) {
+  select.innerHTML = '';
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = 'System default';
+  select.appendChild(defaultOpt);
+  devices.forEach((d, i) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || (placeholderLabel + ' ' + (i + 1));
+    select.appendChild(opt);
+  });
+  select.value = preferredId && devices.some((d) => d.deviceId === preferredId) ? preferredId : '';
+}
+
+async function populateDeviceLists() {
+  deviceNoteEl.textContent = '';
+  let devices;
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch (err) {
+    deviceNoteEl.textContent = 'Could not list devices: ' + err.message;
+    return;
+  }
+  const mics = devices.filter((d) => d.kind === 'audioinput');
+  const speakers = devices.filter((d) => d.kind === 'audiooutput');
+
+  if (mics.length && !mics[0].label) {
+    deviceNoteEl.textContent = 'Device names are hidden until microphone access is allowed.';
+  }
+
+  fillDeviceSelect(micDeviceSelect, mics, preferredMicId, 'Microphone');
+
+  if (!supportsSinkId) {
+    speakerDeviceSelect.innerHTML = '<option value="">Not supported in this browser</option>';
+    speakerDeviceSelect.disabled = true;
+  } else {
+    speakerDeviceSelect.disabled = false;
+    fillDeviceSelect(speakerDeviceSelect, speakers, preferredSpeakerId, 'Speaker');
+  }
+}
+
+document.getElementById('devicesLink').addEventListener('click', async () => {
+  devicesScreen.classList.remove('hidden');
+  // If device names are hidden (no mic permission granted yet in this
+  // browser), ask for it now just so the list can show real names.
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const firstMic = devices.find((d) => d.kind === 'audioinput');
+    if (firstMic && !firstMic.label) {
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tempStream.getTracks().forEach((t) => t.stop());
+    }
+  } catch (err) { /* ignore - list will just show generic names */ }
+  populateDeviceLists();
+});
+
+micDeviceSelect.addEventListener('change', () => {
+  preferredMicId = micDeviceSelect.value;
+  if (preferredMicId) localStorage.setItem(MIC_DEVICE_KEY, preferredMicId);
+  else localStorage.removeItem(MIC_DEVICE_KEY);
+});
+speakerDeviceSelect.addEventListener('change', () => {
+  preferredSpeakerId = speakerDeviceSelect.value;
+  if (preferredSpeakerId) localStorage.setItem(SPEAKER_DEVICE_KEY, preferredSpeakerId);
+  else localStorage.removeItem(SPEAKER_DEVICE_KEY);
+});
+document.getElementById('devicesDoneBtn').addEventListener('click', () => {
+  devicesScreen.classList.add('hidden');
 });
 
 if (localStorage.getItem(LOCK_STORAGE_KEY) !== '1') {
@@ -612,7 +762,17 @@ function speakText(langCode, text) {
   };
 
   audio.addEventListener('error', () => runFallback('audio load error'));
-  audio.play().catch((err) => runFallback(err.name + ': ' + err.message));
+  const startPlayback = () => {
+    audio.play().catch((err) => runFallback(err.name + ': ' + err.message));
+  };
+  if (preferredSpeakerId && supportsSinkId) {
+    audio.setSinkId(preferredSpeakerId).then(startPlayback).catch((err) => {
+      console.warn('setSinkId failed, using default output device', err);
+      startPlayback();
+    });
+  } else {
+    startPlayback();
+  }
 }
 
 function scrollToBottom(el) {
@@ -889,7 +1049,15 @@ function setupMic(lang) {
     if (!listening) {
       status.textContent = 'Starting... (allow microphone access if asked)';
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const constraints = preferredMicId ? { audio: { deviceId: { exact: preferredMicId } } } : { audio: true };
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+          // Preferred mic may be unplugged/unavailable - fall back to the
+          // system default rather than failing outright.
+          if (!preferredMicId) throw err;
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
       } catch (err) {
         status.textContent = 'Microphone permission denied';
         return;
