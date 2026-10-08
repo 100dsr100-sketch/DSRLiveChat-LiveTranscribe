@@ -13,6 +13,10 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>DSR Live Chat Translator</title>
+<script>/* own address dsr-livechat-transcribe.pages.dev - the old shared github.io copy shows an "OLD COPY - moved" page that can
+   move this app's settings across; see dsr-move.js */
+window.DSR_MOVE = {"name": "DSR LiveChat LiveTranscribe", "to": "https://dsr-livechat-transcribe.pages.dev/", "ls": ["dsrLiveChat"], "idb": []};</script>
+<script src="dsr-move.js?v=3"></script>
 <style>
   * { box-sizing: border-box; }
   html, body {
@@ -429,7 +433,7 @@
 // Bump this on every deploy so it's easy to tell (bottom of the app header)
 // whether a device has actually picked up the latest version, vs. showing
 // a stale cached copy.
-const APP_VERSION = 'Version 9';
+const APP_VERSION = 'Version 10';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // --- access lock ---------------------------------------------------------
